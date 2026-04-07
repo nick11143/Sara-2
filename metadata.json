@@ -1,0 +1,5 @@
+{
+  "name": "SARA AI",
+  "description": "A real-time, voice-to-voice AI assistant with a witty, sassy, and flirty personality.",
+  "requestFramePermissions": ["microphone"]
+}
