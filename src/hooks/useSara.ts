@@ -18,7 +18,8 @@ export type Message = {
 
 export function useSara() {
   const [state, setState] = useState<SaraState>("disconnected");
-  const [mood, setMood] = useState<ZoyaMood>("playful");
+  const [basePersonality, setBasePersonality] = useState<ZoyaMood>(() => (localStorage.getItem("sara_personality") as ZoyaMood) || "playful");
+  const [mood, setMood] = useState<ZoyaMood>(basePersonality);
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState(0);
   const [driveTokens, setDriveTokens] = useState<GoogleTokens | null>(null);
@@ -26,28 +27,80 @@ export function useSara() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [wakeWordEnabled, setWakeWordEnabled] = useState(() => localStorage.getItem("wakeWordEnabled") === "true");
-  
+  const [customWakeWord, setCustomWakeWord] = useState(() => localStorage.getItem("customWakeWord") || "");
+  const [assistantName, setAssistantName] = useState(() => localStorage.getItem("assistantName") || "SARA");
+  const [userName, setUserName] = useState(() => localStorage.getItem("userName") || "User");
+  const [storageType, setStorageType] = useState(() => localStorage.getItem("storageType") || "drive");
+  const [bgRun, setBgRun] = useState(() => localStorage.getItem("bgRun") === "true");
+  const [displayOverApps, setDisplayOverApps] = useState(() => localStorage.getItem("displayOverApps") === "true");
+  const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem("customApiKey") || "");
+
+  useEffect(() => {
+    localStorage.setItem("assistantName", assistantName);
+    localStorage.setItem("userName", userName);
+    localStorage.setItem("storageType", storageType);
+    localStorage.setItem("bgRun", String(bgRun));
+    localStorage.setItem("displayOverApps", String(displayOverApps));
+    localStorage.setItem("customApiKey", customApiKey);
+    localStorage.setItem("customWakeWord", customWakeWord);
+    localStorage.setItem("wakeWordEnabled", String(wakeWordEnabled));
+  }, [assistantName, userName, storageType, bgRun, displayOverApps, customApiKey, customWakeWord, wakeWordEnabled]);
+
   const sessionRef = useRef<LiveSession | null>(null);
   const streamerRef = useRef<AudioStreamer | null>(null);
+  const persistentStreamRef = useRef<MediaStream | null>(null);
   const isSpeakingRef = useRef(false);
   const generationServiceRef = useRef<GenerationService | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
   // Mood Trigger Logic
   useEffect(() => {
+    localStorage.setItem("sara_personality", basePersonality);
+    setMood(basePersonality);
+  }, [basePersonality]);
+
+  useEffect(() => {
     const interval = setInterval(() => {
       const silenceTime = Date.now() - lastActivityRef.current;
       if (silenceTime > 60000 && mood !== "annoyed") { // 1 minute silence
         setMood("annoyed");
       } else if (silenceTime > 300000) { // 5 minutes silence
-        setMood("playful"); // Reset to playful after long time
+        setMood(basePersonality); // Reset to base personality after long time
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [mood]);
+  }, [mood, basePersonality]);
 
   const updateActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
+    setMood(basePersonality); // Reset mood to base on activity
+  }, [basePersonality]);
+
+  // Persistent mic stream to prevent blinking when wake word is enabled
+  useEffect(() => {
+    if (wakeWordEnabled) {
+      if (!persistentStreamRef.current) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(stream => {
+            persistentStreamRef.current = stream;
+          })
+          .catch(e => console.error("Failed to get persistent stream", e));
+      }
+    } else {
+      if (persistentStreamRef.current) {
+        persistentStreamRef.current.getTracks().forEach(t => t.stop());
+        persistentStreamRef.current = null;
+      }
+    }
+  }, [wakeWordEnabled]);
+
+  // Cleanup persistent stream on unmount
+  useEffect(() => {
+    return () => {
+      if (persistentStreamRef.current) {
+        persistentStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+    };
   }, []);
 
   const addMessage = useCallback((message: Omit<Message, 'id' | 'timestamp'>) => {
@@ -72,18 +125,18 @@ export function useSara() {
       } else if (text.length > 0 && text.length < 5) {
         setMood("annoyed");
       } else {
-        setMood("playful");
+        setMood(basePersonality);
       }
     }
-  }, [updateActivity]);
+  }, [updateActivity, basePersonality]);
 
   // Initialize Generation Service
   useEffect(() => {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
     if (apiKey) {
       generationServiceRef.current = new GenerationService(apiKey);
     }
-  }, []);
+  }, [customApiKey]);
 
   // Handle Google OAuth Message
   useEffect(() => {
@@ -140,22 +193,29 @@ export function useSara() {
         }
       }
     } catch (err: any) {
-      if (err.response?.status === 401 && tokens.refresh_token) {
-        try {
-          const newTokens = await GoogleDriveService.refreshToken(tokens.refresh_token);
-          setDriveTokens(newTokens);
-          localStorage.setItem('google_drive_tokens', JSON.stringify(newTokens));
-          
-          const loadedMemory = await GoogleDriveService.loadMemory(newTokens);
-          if (loadedMemory) {
-            setMemory(loadedMemory);
-            if (loadedMemory.messages) {
-              setMessages(loadedMemory.messages);
+      if (err.response?.status === 401) {
+        if (tokens.refresh_token) {
+          try {
+            const newTokens = await GoogleDriveService.refreshToken(tokens.refresh_token);
+            setDriveTokens(newTokens);
+            localStorage.setItem('google_drive_tokens', JSON.stringify(newTokens));
+            
+            const loadedMemory = await GoogleDriveService.loadMemory(newTokens);
+            if (loadedMemory) {
+              setMemory(loadedMemory);
+              if (loadedMemory.messages) {
+                setMessages(loadedMemory.messages);
+              }
             }
+            return;
+          } catch (refreshErr) {
+            console.error("Failed to refresh token and load memory:", refreshErr);
           }
-        } catch (refreshErr) {
-          console.error("Failed to refresh token and load memory:", refreshErr);
         }
+        // If no refresh token or refresh failed
+        setDriveTokens(null);
+        localStorage.removeItem('google_drive_tokens');
+        setError("Google Drive session expired. Please reconnect in Settings.");
       } else {
         console.error("Failed to load memory:", err);
       }
@@ -182,12 +242,23 @@ export function useSara() {
           await GoogleDriveService.saveMemory(driveTokens, updatedMemory);
           setMemory(updatedMemory);
         } catch (err: any) {
-          if (err.response?.status === 401 && driveTokens.refresh_token) {
-            const newTokens = await GoogleDriveService.refreshToken(driveTokens.refresh_token);
-            setDriveTokens(newTokens);
-            localStorage.setItem('google_drive_tokens', JSON.stringify(newTokens));
-            await GoogleDriveService.saveMemory(newTokens, updatedMemory);
-            setMemory(updatedMemory);
+          if (err.response?.status === 401) {
+            if (driveTokens.refresh_token) {
+              try {
+                const newTokens = await GoogleDriveService.refreshToken(driveTokens.refresh_token);
+                setDriveTokens(newTokens);
+                localStorage.setItem('google_drive_tokens', JSON.stringify(newTokens));
+                await GoogleDriveService.saveMemory(newTokens, updatedMemory);
+                setMemory(updatedMemory);
+                return;
+              } catch (refreshErr) {
+                console.error("Failed to refresh token:", refreshErr);
+              }
+            }
+            // If no refresh token or refresh failed
+            setDriveTokens(null);
+            localStorage.removeItem('google_drive_tokens');
+            setError("Google Drive session expired. Please reconnect in Settings.");
           } else {
             throw err;
           }
@@ -286,54 +357,104 @@ export function useSara() {
   }, []);
 
   const handleToolCall = useCallback(async (toolCall: any) => {
-    const { name, args, id } = toolCall;
-    if (name === "openWebsite") {
-      const { url } = args;
-      window.open(url, "_blank");
-      sessionRef.current?.sendToolResponse({
-        functionResponses: [
-          {
-            name: "openWebsite",
-            response: { success: true, message: `Opened ${url}` },
-            id,
-          },
-        ],
-      });
-    } else if (name === "updateMemory") {
-      const { instruction } = args;
+    const functionCalls = toolCall.functionCalls || [];
+    const functionResponses: any[] = [];
+
+    for (const call of functionCalls) {
+      const { name, args, id } = call;
       
-      // Add to local memory state
-      setMemory((prev: any) => {
-        const newMemory = {
-          ...prev,
-          customInstructions: [...(prev.customInstructions || []), instruction]
-        };
-        return newMemory;
-      });
+      if (name === "openWebsite") {
+        const { url } = args;
+        if (url.startsWith('intent://') || url.startsWith('whatsapp://')) {
+          window.location.href = url;
+        } else {
+          window.open(url, "_blank");
+        }
+        functionResponses.push({
+          name: "openWebsite",
+          response: { success: true, message: `Opened ${url}` },
+          id,
+        });
+      } else if (name === "updateMemory") {
+        const { instruction } = args;
+        
+        // Add to local memory state
+        setMemory((prev: any) => {
+          const newMemory = {
+            ...prev,
+            customInstructions: [...(prev.customInstructions || []), instruction]
+          };
+          return newMemory;
+        });
 
-      // Add a system message to chat
-      addMessage({
-        role: 'model',
-        type: 'text',
-        content: `*Memory Updated: I have learned your new instruction.* \n\n\`\`\`text\n${instruction}\n\`\`\``
-      });
+        // Add a system message to chat
+        addMessage({
+          role: 'model',
+          type: 'text',
+          content: `*Memory Updated: I have learned your new instruction.* \n\n\`\`\`text\n${instruction}\n\`\`\``
+        });
 
-      sessionRef.current?.sendToolResponse({
-        functionResponses: [
-          {
-            name: "updateMemory",
-            response: { success: true, message: `Memory updated with instruction: ${instruction}` },
-            id,
-          },
-        ],
-      });
+        functionResponses.push({
+          name: "updateMemory",
+          response: { success: true, message: `Memory updated with instruction: ${instruction}` },
+          id,
+        });
+      } else if (name === "updateSettings") {
+        const { assistantName: newAssistantName, userName: newUserName, mood: newMood, storageType: newStorageType, wakeWordEnabled: newWakeWordEnabled, bgRun: newBgRun, displayOverApps: newDisplayOverApps } = args;
+        
+        const updates: string[] = [];
+        if (newAssistantName !== undefined) {
+          setAssistantName(newAssistantName);
+          updates.push(`Assistant Name: ${newAssistantName}`);
+        }
+        if (newUserName !== undefined) {
+          setUserName(newUserName);
+          updates.push(`User Name: ${newUserName}`);
+        }
+        if (newMood !== undefined) {
+          setBasePersonality(newMood as ZoyaMood);
+          updates.push(`Mood: ${newMood}`);
+        }
+        if (newStorageType !== undefined) {
+          setStorageType(newStorageType);
+          updates.push(`Storage Type: ${newStorageType}`);
+        }
+        if (newWakeWordEnabled !== undefined) {
+          setWakeWordEnabled(newWakeWordEnabled);
+          updates.push(`Wake Word: ${newWakeWordEnabled ? 'Enabled' : 'Disabled'}`);
+        }
+        if (newBgRun !== undefined) {
+          setBgRun(newBgRun);
+          updates.push(`Background Run: ${newBgRun ? 'Enabled' : 'Disabled'}`);
+        }
+        if (newDisplayOverApps !== undefined) {
+          setDisplayOverApps(newDisplayOverApps);
+          updates.push(`Display Over Apps: ${newDisplayOverApps ? 'Enabled' : 'Disabled'}`);
+        }
+
+        addMessage({
+          role: 'model',
+          type: 'text',
+          content: `*Settings Updated:*\n${updates.map(u => `- ${u}`).join('\n')}`
+        });
+
+        functionResponses.push({
+          name: "updateSettings",
+          response: { success: true, message: `Settings updated successfully: ${updates.join(', ')}` },
+          id,
+        });
+      }
     }
-  }, [addMessage]);
+
+    if (functionResponses.length > 0) {
+      sessionRef.current?.sendToolResponse({ functionResponses });
+    }
+  }, [addMessage, setAssistantName, setUserName, setBasePersonality, setStorageType, setWakeWordEnabled, setBgRun, setDisplayOverApps]);
 
   const connect = useCallback(async () => {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = customApiKey || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      setError("Gemini API Key is missing.");
+      setError("Gemini API Key is missing. Please add it in Settings.");
       return;
     }
 
@@ -402,20 +523,9 @@ export function useSara() {
 
   // Wake Word Detection
   useEffect(() => {
-    localStorage.setItem("wakeWordEnabled", String(wakeWordEnabled));
-    
-    let persistentStream: MediaStream | null = null;
-    
     const setupWakeWord = async () => {
       // Only run wake word detection if we are disconnected and wake word is enabled
       if (state !== "disconnected" || !wakeWordEnabled) return;
-
-      // Keep a persistent stream open to prevent the browser mic indicator from blinking
-      try {
-        persistentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (e) {
-        console.error("Failed to get persistent mic stream", e);
-      }
 
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) return;
@@ -425,33 +535,40 @@ export function useSara() {
       recognition.interimResults = false;
       recognition.lang = 'en-US';
 
+      let isStarted = false;
+
+      recognition.onstart = () => {
+        isStarted = true;
+      };
+
       recognition.onresult = (event: any) => {
         const lastResult = event.results[event.results.length - 1];
         const transcript = lastResult[0].transcript.toLowerCase().trim();
         
-        const assistantName = (localStorage.getItem("assistantName") || "SARA").toLowerCase();
+        const activeWakeWord = (customWakeWord || `hey ${assistantName}`).toLowerCase();
+        const fallbackName = assistantName.toLowerCase();
         
-        if (transcript.includes(assistantName) || transcript.includes(`hey ${assistantName}`)) {
+        if (transcript.includes(activeWakeWord) || (!customWakeWord && transcript.includes(fallbackName))) {
           console.log("Wake word detected!");
           connect();
         }
       };
 
       recognition.onerror = (event: any) => {
+        if (event.error === 'aborted' || event.error === 'no-speech') return;
+        
         console.error("Speech recognition error", event.error);
-        // Restart on error if it's not a 'not-allowed' error
-        if (event.error !== 'not-allowed' && state === "disconnected" && wakeWordEnabled) {
-          setTimeout(() => {
-            try { recognition.start(); } catch (e) {}
-          }, 1000);
-        }
+        isStarted = false;
       };
 
       recognition.onend = () => {
+        isStarted = false;
         // Keep listening if disconnected
         if (state === "disconnected" && wakeWordEnabled) {
           setTimeout(() => {
-            try { recognition.start(); } catch (e) {}
+            if (!isStarted && state === "disconnected" && wakeWordEnabled) {
+              try { recognition.start(); } catch (e) {}
+            }
           }, 1000);
         }
       };
@@ -472,11 +589,8 @@ export function useSara() {
       if (recognitionInstance) {
         recognitionInstance.stop();
       }
-      if (persistentStream) {
-        persistentStream.getTracks().forEach(track => track.stop());
-      }
     };
-  }, [state, connect, wakeWordEnabled]);
+  }, [state, connect, wakeWordEnabled, customWakeWord, assistantName]);
 
   const disconnect = useCallback(() => {
     sessionRef.current?.disconnect();
@@ -521,6 +635,8 @@ export function useSara() {
   return { 
     state, 
     mood,
+    basePersonality,
+    setBasePersonality,
     error, 
     volume, 
     driveTokens, 
@@ -528,6 +644,20 @@ export function useSara() {
     isTyping,
     wakeWordEnabled,
     setWakeWordEnabled,
+    assistantName,
+    setAssistantName,
+    userName,
+    setUserName,
+    storageType,
+    setStorageType,
+    bgRun,
+    setBgRun,
+    displayOverApps,
+    setDisplayOverApps,
+    customApiKey,
+    setCustomApiKey,
+    customWakeWord,
+    setCustomWakeWord,
     connect, 
     disconnect, 
     connectDrive, 

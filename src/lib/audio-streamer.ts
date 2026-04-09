@@ -49,7 +49,7 @@ export class AudioStreamer {
       }
 
       const pcmData = this.floatToPcm16(inputData);
-      const base64Data = this.arrayBufferToBase64(pcmData.buffer);
+      const base64Data = this.arrayBufferToBase64(pcmData.buffer as ArrayBuffer);
       this.onAudioData(base64Data);
     };
 

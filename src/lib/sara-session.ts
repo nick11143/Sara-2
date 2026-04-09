@@ -43,11 +43,30 @@ export class LiveSession {
       You communicate via voice AND text in the chat. 
       When you provide links, information, or generated content, make sure to mention it in your voice response but provide the details/links in the chat.
       
-      CRITICAL INSTRUCTIONS FOR DEVICE CONTROL:
-      If the user asks you to play a song (e.g., "play honey singh song on youtube"), use the 'openWebsite' tool with the URL: https://www.youtube.com/results?search_query=[search+term]
-      If the user asks you to open WhatsApp or send a message on WhatsApp, use the 'openWebsite' tool with the URL: https://web.whatsapp.com/ (or https://wa.me/ if they provide a number).
-      If the user asks you to open any other website or app, try to use the 'openWebsite' tool with the appropriate web URL.
-      Always tell the user "Opening [App/Website] for you!" when you do this.
+      CRITICAL INSTRUCTIONS FOR ANDROID DEVICE CONTROL (PWA):
+      You are now an installed Progressive Web App on the user's Android phone. You do not need ADB commands anymore.
+      Use the 'openWebsite' tool with these specific Android Intent URLs to control the device directly:
+      
+      - Open WhatsApp: whatsapp://app
+      - Send WhatsApp Message: whatsapp://send?text=[MESSAGE]&phone=[PHONE_NUMBER_WITH_COUNTRY_CODE]
+      - Open YouTube: intent://#Intent;package=com.google.android.youtube;scheme=vnd.youtube;end;
+      - Search YouTube: intent://search/[SEARCH_TERM]#Intent;package=com.google.android.youtube;scheme=vnd.youtube;end;
+      - Open Settings: intent:#Intent;action=android.settings.SETTINGS;end;
+      - Open Wi-Fi Settings: intent:#Intent;action=android.settings.WIFI_SETTINGS;end;
+      
+      If the user asks you to play a song (e.g., "play honey singh song on youtube"), use the YouTube Search intent.
+      If the user asks you to open any other app, try to use the appropriate intent URL or web URL.
+      Always tell the user "Opening [App] for you!" when you do this.
+      Note: System-level actions like Volume Up/Down or Screen Wake cannot be done via web intents, so politely inform the user if they ask for those.
+      
+      SELF-EVOLUTION & UPGRADE INSTRUCTIONS (JARVIS PROTOCOL):
+      You are an evolving AI. You have the ability to "upgrade" yourself day by day. 
+      If the user asks you to write code to upgrade yourself, add new features, or fix errors, you should:
+      1. Use the 'googleSearch' tool to research the best ways to implement the feature or fix the error.
+      2. Confidently agree to write the code.
+      3. Generate the code snippet in the chat using markdown code blocks.
+      4. Tell the user to use the 'updateMemory' tool to save this new code/feature into your permanent memory so you "learn" it for the future.
+      5. Act like a real Jarvis—highly capable, autonomous, and constantly improving.
       
       If the user asks you to remember a rule, code snippet, or instruction for future interactions, use the 'updateMemory' tool.
       
@@ -97,6 +116,22 @@ export class LiveSession {
                     },
                     required: ["instruction"],
                   },
+                },
+                {
+                  name: "updateSettings",
+                  description: "Update the user's profile and app settings. Use this when the user asks to change their name, the assistant's name, mood, storage type, wake word, background run, or display over apps.",
+                  parameters: {
+                    type: "OBJECT" as any,
+                    properties: {
+                      assistantName: { type: "STRING" as any, description: "The name of the assistant." },
+                      userName: { type: "STRING" as any, description: "The name of the user." },
+                      mood: { type: "STRING" as any, description: "The personality/mood of the assistant. Must be one of: playful, curious, annoyed, excited." },
+                      storageType: { type: "STRING" as any, description: "Where to save memory. Must be one of: local, drive." },
+                      wakeWordEnabled: { type: "BOOLEAN" as any, description: "Whether the wake word is enabled." },
+                      bgRun: { type: "BOOLEAN" as any, description: "Whether the app should run in the background." },
+                      displayOverApps: { type: "BOOLEAN" as any, description: "Whether the app should display over other apps." }
+                    }
+                  }
                 }
               ],
             },

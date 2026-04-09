@@ -12,8 +12,15 @@ import { useSara, SaraState, Message } from "../hooks/useSara";
 
 export default function SaraUI() {
   const { 
-    state, mood, error, volume, driveTokens, messages, isTyping,
+    state, mood, basePersonality, setBasePersonality, error, volume, driveTokens, messages, isTyping,
     wakeWordEnabled, setWakeWordEnabled,
+    assistantName, setAssistantName,
+    userName, setUserName,
+    storageType, setStorageType,
+    bgRun, setBgRun,
+    displayOverApps, setDisplayOverApps,
+    customApiKey, setCustomApiKey,
+    customWakeWord, setCustomWakeWord,
     connect, disconnect, connectDrive, generate, sendTextMessage, clearChat
   } = useSara();
 
@@ -97,19 +104,6 @@ export default function SaraUI() {
 
   const [showDrivePrompt, setShowDrivePrompt] = useState(true);
   const [showProfile, setShowProfile] = useState(false);
-  const [assistantName, setAssistantName] = useState(() => localStorage.getItem("assistantName") || "SARA");
-  const [userName, setUserName] = useState(() => localStorage.getItem("userName") || "User");
-  const [storageType, setStorageType] = useState(() => localStorage.getItem("storageType") || "drive");
-  const [bgRun, setBgRun] = useState(() => localStorage.getItem("bgRun") === "true");
-  const [displayOverApps, setDisplayOverApps] = useState(() => localStorage.getItem("displayOverApps") === "true");
-
-  useEffect(() => {
-    localStorage.setItem("assistantName", assistantName);
-    localStorage.setItem("userName", userName);
-    localStorage.setItem("storageType", storageType);
-    localStorage.setItem("bgRun", String(bgRun));
-    localStorage.setItem("displayOverApps", String(displayOverApps));
-  }, [assistantName, userName, storageType, bgRun, displayOverApps]);
 
   const handleConnectDrive = async () => {
     await connectDrive();
@@ -217,16 +211,49 @@ export default function SaraUI() {
 
                 <div className="h-px bg-white/10" />
 
+                {/* Personality Settings */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-white/80">Personality</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(['playful', 'curious', 'annoyed', 'excited'] as const).map((p) => (
+                      <button 
+                        key={p}
+                        onClick={() => setBasePersonality(p)}
+                        className={`py-2 px-3 rounded-xl border transition-all text-sm capitalize ${basePersonality === p ? 'bg-[#ff4e00]/10 border-[#ff4e00] text-[#ff4e00]' : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'}`}
+                      >
+                        {p} {moodIcons[p]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
                 {/* App Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-medium text-white/80">App Settings</h3>
                   <label className="flex items-center justify-between cursor-pointer group">
-                    <span className="text-sm text-white/60 group-hover:text-white transition-colors">Wake Word ("Hey {assistantName}")</span>
+                    <span className="text-sm text-white/60 group-hover:text-white transition-colors">Wake Word Detection</span>
                     <div className={`w-10 h-6 rounded-full transition-colors relative ${wakeWordEnabled ? 'bg-[#ff4e00]' : 'bg-white/10'}`}>
                       <input type="checkbox" className="hidden" checked={wakeWordEnabled} onChange={(e) => setWakeWordEnabled(e.target.checked)} />
                       <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${wakeWordEnabled ? 'left-5' : 'left-1'}`} />
                     </div>
                   </label>
+                  
+                  {wakeWordEnabled && (
+                    <div>
+                      <label className="block text-xs text-white/40 mb-1 uppercase tracking-wider">Custom Wake Word</label>
+                      <input 
+                        type="text" 
+                        value={customWakeWord}
+                        onChange={(e) => setCustomWakeWord(e.target.value)}
+                        placeholder={`e.g. Hey ${assistantName}`}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#ff4e00]/50 text-sm"
+                      />
+                      <p className="text-xs text-white/40 mt-1">Leave blank to use default: "Hey {assistantName}"</p>
+                    </div>
+                  )}
+
                   <label className="flex items-center justify-between cursor-pointer group">
                     <span className="text-sm text-white/60 group-hover:text-white transition-colors">Display over other apps</span>
                     <div className={`w-10 h-6 rounded-full transition-colors relative ${displayOverApps ? 'bg-[#ff4e00]' : 'bg-white/10'}`}>
@@ -241,6 +268,24 @@ export default function SaraUI() {
                       <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${bgRun ? 'left-5' : 'left-1'}`} />
                     </div>
                   </label>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
+                {/* API Settings */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-white/80">API Settings</h3>
+                  <div>
+                    <label className="block text-xs text-white/40 mb-1 uppercase tracking-wider">Custom Gemini API Key</label>
+                    <input 
+                      type="password" 
+                      value={customApiKey}
+                      onChange={(e) => setCustomApiKey(e.target.value)}
+                      placeholder="Leave blank to use default"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#ff4e00]/50 text-sm"
+                    />
+                    <p className="text-xs text-white/40 mt-1">Changes take effect on reconnect.</p>
+                  </div>
                 </div>
 
                 <div className="h-px bg-white/10" />
