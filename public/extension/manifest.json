@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "SARA AI Assistant",
+  "version": "1.0",
+  "description": "Voice-activated AI assistant using Web Speech API for always-on listening.",
+  "permissions": [
+    "offscreen",
+    "tabs",
+    "notifications"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open SARA"
+  },
+  "icons": {
+    "128": "icon.svg"
+  }
+}

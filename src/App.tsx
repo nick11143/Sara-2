@@ -22,10 +22,19 @@ export default function App() {
     }, 3000);
 
     // Auth listener
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setIsAuthenticated(!!user);
+    let unsubscribe = () => {};
+    if (auth) {
+      unsubscribe = onAuthStateChanged(auth, (user) => {
+        const isGuest = localStorage.getItem("storageType") === "local";
+        setIsAuthenticated(!!user || isGuest);
+        setIsAuthReady(true);
+      });
+    } else {
+      // If Firebase failed, allow local storage mode
+      const isGuest = localStorage.getItem("storageType") === "local";
+      setIsAuthenticated(isGuest);
       setIsAuthReady(true);
-    });
+    }
 
     return () => {
       clearTimeout(timer);

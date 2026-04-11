@@ -63,8 +63,12 @@ export class AudioStreamer {
     this.source?.disconnect();
     this.processor?.disconnect();
     this.stream?.getTracks().forEach(track => track.stop());
-    this.audioContext?.close();
-    this.audioContext = null;
+    
+    // Don't close context, just suspend it to reuse it
+    if (this.audioContext && this.audioContext.state !== 'closed') {
+      this.audioContext.suspend();
+    }
+    
     this.stream = null;
     this.source = null;
     this.processor = null;
@@ -78,34 +82,39 @@ export class AudioStreamer {
   async play(base64Data: string) {
     if (!this.audioContext) return;
 
-    if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
-    }
+    try {
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
 
-    const binaryString = atob(base64Data);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const pcmData = new Int16Array(bytes.buffer);
-    
-    // Create a buffer for 24kHz audio
-    const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, 24000);
-    const channelData = audioBuffer.getChannelData(0);
-    
-    for (let i = 0; i < pcmData.length; i++) {
-      channelData[i] = pcmData[i] / 32768.0;
-    }
+      const binaryString = atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const pcmData = new Int16Array(bytes.buffer);
+      
+      // Create a buffer for 24kHz audio
+      const audioBuffer = this.audioContext.createBuffer(1, pcmData.length, 24000);
+      const channelData = audioBuffer.getChannelData(0);
+      
+      for (let i = 0; i < pcmData.length; i++) {
+        channelData[i] = pcmData[i] / 32768.0;
+      }
 
-    const source = this.audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(this.audioContext.destination);
+      const source = this.audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.audioContext.destination);
 
-    // Schedule playback for gapless audio
-    const startTime = Math.max(this.audioContext.currentTime, this.nextStartTime);
-    source.start(startTime);
-    this.nextStartTime = startTime + audioBuffer.duration;
+      // Schedule playback for gapless audio
+      // Add a small buffer offset (50ms) to prevent jitter
+      const startTime = Math.max(this.audioContext.currentTime + 0.05, this.nextStartTime);
+      source.start(startTime);
+      this.nextStartTime = startTime + audioBuffer.duration;
+    } catch (e) {
+      console.error("Error playing audio:", e);
+    }
   }
 
   private floatToPcm16(float32Array: Float32Array): Int16Array {
@@ -118,11 +127,11 @@ export class AudioStreamer {
   }
 
   private arrayBufferToBase64(buffer: ArrayBuffer): string {
-    let binary = '';
     const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    let binary = '';
+    const chunk = 8192;
+    for (let i = 0; i < bytes.byteLength; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as any);
     }
     return btoa(binary);
   }

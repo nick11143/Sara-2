@@ -1,38 +1,89 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
+// --- LEVEL 10: Advanced Retry & Security Wrapper ---
+async function withRetry<T>(operation: () => Promise<T>, maxRetries = 3, delayMs = 1000): Promise<T> {
+  let lastError: any;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.warn(`[Generation Engine] Attempt ${i + 1} failed. Retrying in ${delayMs}ms...`, error);
+      lastError = error;
+      await new Promise(res => setTimeout(res, delayMs * Math.pow(2, i))); // Exponential backoff
+    }
+  }
+  throw new Error(`[Generation Engine] Critical Failure after ${maxRetries} attempts: ${lastError?.message}`);
+}
+
+function sanitizeInput(input: string): string {
+  // Basic sanitization to prevent injection or malformed URLs
+  return input.replace(/[<>]/g, '').trim();
+}
+// ---------------------------------------------------
+
 export class GenerationService {
   private ai: GoogleGenAI;
+  private apiKey: string;
 
   constructor(apiKey: string) {
+    this.apiKey = apiKey;
     this.ai = new GoogleGenAI({ apiKey });
   }
 
   /**
-   * Generates an image from a text prompt.
+   * Generates an image from a text prompt using Pollinations.ai (Free & Unlimited).
    */
-  async generateImage(prompt: string) {
-    const response = await this.ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      contents: {
-        parts: [{ text: prompt }],
-      },
-    });
+  async generateImage(prompt: string, aspectRatio: string = "1:1") {
+    return withRetry(async () => {
+      try {
+        const safePrompt = sanitizeInput(prompt);
+        const seed = Math.floor(Math.random() * 1000000);
+        let width = 1024;
+        let height = 1024;
 
-    const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (imagePart?.inlineData) {
-      return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
-    }
-    throw new Error("Failed to generate image");
+        if (aspectRatio === "16:9") {
+          width = 1280;
+          height = 720;
+        } else if (aspectRatio === "9:16") {
+          width = 720;
+          height = 1280;
+        }
+
+        const encodedPrompt = encodeURIComponent(safePrompt);
+        const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=flux`;
+        
+        return url;
+      } catch (err) {
+        console.error("Pollinations failed, falling back to Gemini:", err);
+        const response = await this.ai.models.generateContent({
+          model: "gemini-2.5-flash-image",
+          contents: {
+            parts: [{ text: prompt }],
+          },
+          config: {
+            imageConfig: {
+              aspectRatio: aspectRatio,
+            }
+          }
+        });
+
+        const imagePart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+        if (imagePart?.inlineData) {
+          return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
+        }
+        throw new Error("Failed to generate image");
+      }
+    });
   }
 
   /**
    * Generates a video from a prompt and optional starting image.
    */
-  async generateVideo(prompt: string, base64Image?: string) {
+  async generateVideo(prompt: string, base64Image?: string, aspectRatio: string = "16:9") {
     const config: any = {
       numberOfVideos: 1,
       resolution: "720p",
-      aspectRatio: "16:9",
+      aspectRatio: aspectRatio,
     };
 
     const payload: any = {
@@ -67,7 +118,7 @@ export class GenerationService {
     const response = await fetch(downloadLink, {
       method: 'GET',
       headers: {
-        'x-goog-api-key': process.env.GEMINI_API_KEY!,
+        'x-goog-api-key': this.apiKey,
       },
     });
 

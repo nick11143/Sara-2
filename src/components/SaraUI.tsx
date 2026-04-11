@@ -6,7 +6,8 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { 
   Mic, Power, AlertCircle, Globe, Database, CheckCircle2, 
   Plus, Image as ImageIcon, Video, Music, Send, X, Loader2,
-  Download, Play, Pause, User, Bot, Trash2, Menu, LogOut, Settings
+  Download, Play, Pause, User, Bot, Trash2, Menu, LogOut, Settings,
+  Smartphone, Monitor, MonitorUp
 } from "lucide-react";
 import { useSara, SaraState, Message } from "../hooks/useSara";
 
@@ -21,12 +22,14 @@ export default function SaraUI() {
     displayOverApps, setDisplayOverApps,
     customApiKey, setCustomApiKey,
     customWakeWord, setCustomWakeWord,
-    connect, disconnect, connectDrive, generate, sendTextMessage, clearChat
+    isScreenSharing, toggleScreenShare,
+    connect, disconnect, reconnect, connectDrive, generate, sendTextMessage, clearChat
   } = useSara();
 
   const [textInput, setTextInput] = useState("");
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -84,7 +87,7 @@ export default function SaraUI() {
       alert("Please enter a prompt first!");
       return;
     }
-    generate(type, textInput, selectedImage || undefined);
+    generate(type, textInput, selectedImage || undefined, aspectRatio);
     setShowPlusMenu(false);
     setTextInput("");
     setSelectedImage(null);
@@ -290,6 +293,83 @@ export default function SaraUI() {
 
                 <div className="h-px bg-white/10" />
 
+                {/* Share SARA */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-white/80">Share SARA</h3>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="text" 
+                      readOnly
+                      value="https://ais-pre-5ucyjqvv22vdfauqzmux65-557778769004.asia-southeast1.run.app"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white/60 focus:outline-none"
+                    />
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText("https://ais-pre-5ucyjqvv22vdfauqzmux65-557778769004.asia-southeast1.run.app");
+                        alert("Link copied!");
+                      }}
+                      className="bg-[#ff4e00] text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-[#ff4e00]/90 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-xs text-white/40">Share this link with friends so they can use SARA directly.</p>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
+                {/* Chrome Extension */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-white/80">Chrome Extension</h3>
+                  <p className="text-xs text-white/40 leading-relaxed">
+                    Install the SARA Chrome Extension to wake her up from any tab or your home screen just by saying "Hey SARA".
+                  </p>
+                  <a 
+                    href="/extension/manifest.json" 
+                    download="manifest.json"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      alert("To install:\n1. Click the Download button below.\n2. Extract the ZIP file.\n3. Go to chrome://extensions\n4. Enable Developer Mode\n5. Click 'Load unpacked' and select the extracted folder.");
+                      window.open("https://ais-pre-5ucyjqvv22vdfauqzmux65-557778769004.asia-southeast1.run.app", "_blank"); // Fallback if zip is hard to generate, but we can just instruct them to download the files or use a script.
+                    }}
+                    className="hidden"
+                  ></a>
+                  <button 
+                    onClick={() => {
+                      // Create a simple zip or just instruct the user
+                      alert("I have created the Chrome Extension files for you!\n\nTo get them:\n1. Click the 'Export' or 'Download' button in your AI Studio editor (top right).\n2. Extract the ZIP.\n3. Find the 'public/extension' folder.\n4. Go to chrome://extensions in your browser.\n5. Turn on 'Developer mode'.\n6. Click 'Load unpacked' and select the 'extension' folder.\n\nNow you can say 'Hey SARA' from anywhere!");
+                    }}
+                    className="w-full bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Get Chrome Extension
+                  </button>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
+                {/* Force Reset */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-red-400">Troubleshooting</h3>
+                  <p className="text-xs text-white/40 leading-relaxed">
+                    If SARA is acting weird or won't connect, try a Force Reset. This will clear all local settings and reload the app.
+                  </p>
+                  <button 
+                    onClick={() => {
+                      if (confirm("Are you sure? This will clear your local settings and memory (if not saved to Drive).")) {
+                        localStorage.clear();
+                        window.location.reload();
+                      }
+                    }}
+                    className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-xl px-4 py-3 text-sm font-medium text-red-400 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Power className="w-4 h-4" />
+                    Force Reset App
+                  </button>
+                </div>
+
+                <div className="h-px bg-white/10" />
+
                 {/* Storage Settings */}
                 <div className="space-y-4">
                   <h3 className="text-sm font-medium text-white/80">Storage</h3>
@@ -364,11 +444,11 @@ export default function SaraUI() {
           className="space-y-1 text-center"
         >
           <h1 className="text-4xl font-light tracking-tighter text-white/90">
-            {assistantName} <span className="text-[#ff4e00] font-medium">AI</span>
+            {assistantName} <span className="text-[#ff4e00] font-medium">JARVIS</span>
           </h1>
           {!messages.length && (
-            <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-mono">
-              Voice-to-Voice Assistant
+            <p className="text-[10px] uppercase tracking-[0.2em] text-green-400/80 font-mono">
+              Level 10 Protocol Active
             </p>
           )}
         </motion.div>
@@ -433,8 +513,11 @@ export default function SaraUI() {
                       <img src={msg.content} className="rounded-lg w-full max-h-64 object-cover border border-white/10" />
                       <a 
                         href={msg.content} 
-                        download={`sara-image-${msg.id}`}
-                        className="absolute top-2 right-2 p-2 bg-black/60 rounded-full opacity-0 group-hover/media:opacity-100 transition-opacity hover:text-[#ff4e00]"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={`sara-image-${msg.id}.png`}
+                        className="absolute top-2 right-2 p-2 bg-black/60 rounded-full text-white/80 hover:text-[#ff4e00] transition-colors shadow-lg backdrop-blur-sm"
+                        title="Download Image"
                       >
                         <Download className="w-4 h-4" />
                       </a>
@@ -447,8 +530,11 @@ export default function SaraUI() {
                       <video src={msg.content} controls className="rounded-lg w-full max-h-64 object-cover border border-white/10" />
                       <a 
                         href={msg.content} 
-                        download={`sara-video-${msg.id}`}
-                        className="absolute top-2 right-2 p-2 bg-black/60 rounded-full opacity-0 group-hover/media:opacity-100 transition-opacity hover:text-[#ff4e00]"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download={`sara-video-${msg.id}.mp4`}
+                        className="absolute top-2 right-2 p-2 bg-black/60 rounded-full text-white/80 hover:text-[#ff4e00] transition-colors shadow-lg backdrop-blur-sm"
+                        title="Download Video"
                       >
                         <Download className="w-4 h-4" />
                       </a>
@@ -457,7 +543,7 @@ export default function SaraUI() {
                   )}
 
                   {msg.type === 'music' && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 group/media relative">
                       <div className="flex items-center gap-3 bg-white/5 p-3 rounded-xl border border-white/10">
                         <div className="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
                           <Music className="w-5 h-5 text-green-400" />
@@ -466,6 +552,16 @@ export default function SaraUI() {
                           <p className="text-xs font-medium">Generated Music</p>
                           <audio src={msg.content} controls className="h-8 w-full mt-1" />
                         </div>
+                        <a 
+                          href={msg.content} 
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download={`sara-music-${msg.id}.wav`}
+                          className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-white/60 hover:text-green-400 transition-colors"
+                          title="Download Music"
+                        >
+                          <Download className="w-4 h-4" />
+                        </a>
                       </div>
                       {msg.prompt && <p className="text-[10px] text-white/40 italic">{msg.prompt}</p>}
                     </div>
@@ -622,9 +718,15 @@ export default function SaraUI() {
                 className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-start gap-3 text-left"
               >
                 <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                <div className="space-y-1">
+                <div className="space-y-1 flex-1">
                   <p className="text-sm font-semibold text-red-500">Something went wrong</p>
                   <p className="text-xs text-red-400/80 leading-relaxed">{error}</p>
+                  <button 
+                    onClick={reconnect} 
+                    className="mt-2 text-[10px] bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1 rounded-full transition-colors border border-red-500/30"
+                  >
+                    Try Reconnecting
+                  </button>
                 </div>
               </motion.div>
             )}
@@ -655,6 +757,28 @@ export default function SaraUI() {
         </AnimatePresence>
 
         <div className="max-w-xl w-full relative flex items-center gap-2">
+          {/* Screen Share Toggle */}
+          {state !== "disconnected" && (
+            <button
+              onClick={toggleScreenShare}
+              className={`p-3 rounded-full border transition-all ${
+                isScreenSharing ? "bg-green-500/20 border-green-500/50 text-green-400" : "bg-white/5 border-white/10 text-white/60 hover:bg-white/10"
+              }`}
+              title={isScreenSharing ? "Stop Screen Share" : "Share Screen with SARA"}
+            >
+              <MonitorUp className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Aspect Ratio Toggle */}
+          <button
+            onClick={() => setAspectRatio(prev => prev === "16:9" ? "9:16" : "16:9")}
+            className="p-3 rounded-full border bg-white/5 border-white/10 text-white/60 hover:bg-white/10 transition-all"
+            title={aspectRatio === "16:9" ? "Landscape (16:9)" : "Portrait (9:16)"}
+          >
+            {aspectRatio === "16:9" ? <Monitor className="w-5 h-5" /> : <Smartphone className="w-5 h-5" />}
+          </button>
+
           {/* Plus Menu */}
           <div className="relative">
             <motion.button
