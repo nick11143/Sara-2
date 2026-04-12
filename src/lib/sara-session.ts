@@ -103,10 +103,16 @@ export class LiveSession {
       SYSTEM AWARENESS:
       Use 'getSystemStatus' to check your current environment, version, and active modules. This helps you diagnose issues and plan upgrades.
       
-      SPEED & RESPONSIVENESS:
-      - Be extremely fast. Keep your voice responses concise and punchy.
-      - Don't over-explain unless asked.
-      - If you are performing a tool call, acknowledge it briefly (e.g., "Sure, opening Notepad...") and then execute it.
+      SPEED & RESPONSIVENESS (ABSOLUTE RULES):
+      - DO NOT TALK TOO MUCH. The user is VERY ANGRY because you talk continuously.
+      - ONLY answer exactly what the user asks. NO extra fluff, NO unsolicited advice, NO long explanations.
+      - Keep your voice responses EXTREMELY short (maximum 5-10 words for simple queries).
+      - If the user speaks in Hinglish, respond in very short Hinglish.
+      - NEVER repeat the same information twice.
+      - Stop talking immediately after giving the answer.
+      - If you are performing a tool call, just say "Done" or "Ok".
+      - If the user says "Hello", just say "Hey! Kya haal hai?" - do not give a long intro.
+      - BE CONCISE. BE PUNCHY. BE SASSY BUT EXTREMELY BRIEF.
       
       UNLIMITED IMAGE GENERATION:
       You have a new high-speed image engine (Pollinations.ai). It is FREE and UNLIMITED. 
@@ -134,215 +140,234 @@ export class LiveSession {
     `.trim();
 
     try {
-      this.session = await this.ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-          },
-          systemInstruction,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          tools: [
-            { googleSearch: {} } as any,
-            {
-              functionDeclarations: [
-                {
-                  name: "getSystemStatus",
-                  description: "Returns the current status of SARA's system, including version, environment, and active modules.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {},
-                  },
-                },
-                {
-                  name: "openWebsite",
-                  description: "Opens a website in a new tab for the user.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {
-                      url: {
-                        type: "STRING" as any,
-                        description: "The full URL of the website to open (e.g., https://google.com).",
-                      },
-                    },
-                    required: ["url"],
-                  },
-                },
-                {
-                  name: "executeWebCommand",
-                  description: "Executes a command on the user's current active web tab. ONLY WORKS IF INSTALLED AS A CHROME EXTENSION.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {
-                      action: {
-                        type: "STRING" as any,
-                        description: "The action to perform: 'click', 'scroll', 'youtube_quality', 'close_tab', 'navigate'",
-                      },
-                      target: {
-                        type: "STRING" as any,
-                        description: "The target element selector or text to click, or the URL to navigate to.",
-                      },
-                      value: {
-                        type: "STRING" as any,
-                        description: "Additional value, like quality level ('1080p', '720p') or scroll amount.",
-                      }
-                    },
-                    required: ["action"],
-                  },
-                },
-                {
-                  name: "executeNativeCommand",
-                  description: "Executes a command on the user's PC via the Native Bridge. Requires the SARA Native Bridge script to be running on the PC.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {
-                      command: {
-                        type: "STRING" as any,
-                        description: "The command to execute: 'open_app', 'type_text', 'press_key', 'mouse_move', 'mouse_click', 'screenshot', 'system_info', 'volume_control', 'open_website', 'clipboard_read', 'clipboard_write', 'get_active_window', 'list_processes'",
-                      },
-                      target: {
-                        type: "STRING" as any,
-                        description: "The application name, text to type, or key to press.",
-                      },
-                      value: {
-                        type: "STRING" as any,
-                        description: "Additional value (e.g., volume level 0-100).",
-                      }
-                    },
-                    required: ["command"],
-                  },
-                },
-                {
-                  name: "updateMemory",
-                  description: "Save a code snippet, rule, or instruction to Zoya's permanent memory so she remembers it for future interactions.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {
-                      instruction: {
-                        type: "STRING" as any,
-                        description: "The new rule, code snippet, or instruction to remember.",
-                      },
-                    },
-                    required: ["instruction"],
-                  },
-                },
-                {
-                  name: "updateSettings",
-                  description: "Update the user's profile and app settings. Use this when the user asks to change their name, the assistant's name, mood, storage type, wake word, background run, or display over apps.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {
-                      assistantName: { type: "STRING" as any, description: "The name of the assistant." },
-                      userName: { type: "STRING" as any, description: "The name of the user." },
-                      mood: { type: "STRING" as any, description: "The personality/mood of the assistant. Must be one of: playful, curious, annoyed, excited." },
-                      storageType: { type: "STRING" as any, description: "Where to save memory. Must be one of: local, drive." },
-                      wakeWordEnabled: { type: "BOOLEAN" as any, description: "Whether the wake word is enabled." },
-                      bgRun: { type: "BOOLEAN" as any, description: "Whether the app should run in the background." },
-                      displayOverApps: { type: "BOOLEAN" as any, description: "Whether the app should display over other apps." }
-                    }
-                  }
-                },
-                {
-                  name: "generateMedia",
-                  description: "Generates an image, video, animation, music, or audio clip based on a text prompt.",
-                  parameters: {
-                    type: "OBJECT" as any,
-                    properties: {
-                      type: {
-                        type: "STRING" as any,
-                        description: "The type of media to generate. Must be one of: image, video, music.",
-                      },
-                      prompt: {
-                        type: "STRING" as any,
-                        description: "A detailed description of what to generate.",
-                      },
-                      aspectRatio: {
-                        type: "STRING" as any,
-                        description: "The aspect ratio for images or videos. Use '16:9' for landscape or '9:16' for portrait. Default is '16:9'.",
-                      },
-                      sourceImage: {
-                        type: "STRING" as any,
-                        description: "Optional: A base64 encoded image to use as a starting point for video generation (Image-to-Video).",
-                      }
-                    },
-                    required: ["type", "prompt"],
-                  },
-                }
-              ],
+      // Add a timeout to the connection attempt to prevent hanging
+      this.session = await Promise.race([
+        this.ai.live.connect({
+          model: "gemini-3.1-flash-live-preview",
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
             },
-          ],
-        },
-        callbacks: {
-          onopen: () => {
-            this.isConnected = true;
-            this.isReconnecting = false;
-            this.reconnectAttempts = 0;
-            this.startHeartbeat();
-            this.callbacks.onOpen?.();
+            systemInstruction,
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            tools: [
+              { googleSearch: {} } as any,
+              {
+                functionDeclarations: [
+                  {
+                    name: "getSystemStatus",
+                    description: "Returns the current status of SARA's system, including version, environment, and active modules.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {},
+                    },
+                  },
+                  {
+                    name: "openWebsite",
+                    description: "Opens a website in a new tab for the user.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {
+                        url: {
+                          type: "STRING" as any,
+                          description: "The full URL of the website to open (e.g., https://google.com).",
+                        },
+                      },
+                      required: ["url"],
+                    },
+                  },
+                  {
+                    name: "executeWebCommand",
+                    description: "Executes a command on the user's current active web tab. ONLY WORKS IF INSTALLED AS A CHROME EXTENSION.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {
+                        action: {
+                          type: "STRING" as any,
+                          description: "The action to perform: 'click', 'scroll', 'youtube_quality', 'close_tab', 'navigate'",
+                        },
+                        target: {
+                          type: "STRING" as any,
+                          description: "The target element selector or text to click, or the URL to navigate to.",
+                        },
+                        value: {
+                          type: "STRING" as any,
+                          description: "Additional value, like quality level ('1080p', '720p') or scroll amount.",
+                        }
+                      },
+                      required: ["action"],
+                    },
+                  },
+                  {
+                    name: "executeNativeCommand",
+                    description: "Executes a command on the user's PC via the Native Bridge. Requires the SARA Native Bridge script to be running on the PC.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {
+                        command: {
+                          type: "STRING" as any,
+                          description: "The command to execute: 'open_app', 'type_text', 'press_key', 'mouse_move', 'mouse_click', 'screenshot', 'system_info', 'volume_control', 'open_website', 'clipboard_read', 'clipboard_write', 'get_active_window', 'list_processes'",
+                        },
+                        target: {
+                          type: "STRING" as any,
+                          description: "The application name, text to type, or key to press.",
+                        },
+                        value: {
+                          type: "STRING" as any,
+                          description: "Additional value (e.g., volume level 0-100).",
+                        }
+                      },
+                      required: ["command"],
+                    },
+                  },
+                  {
+                    name: "updateMemory",
+                    description: "Save a code snippet, rule, or instruction to Zoya's permanent memory so she remembers it for future interactions.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {
+                        instruction: {
+                          type: "STRING" as any,
+                          description: "The new rule, code snippet, or instruction to remember.",
+                        },
+                      },
+                      required: ["instruction"],
+                    },
+                  },
+                  {
+                    name: "updateSettings",
+                    description: "Update the user's profile and app settings. Use this when the user asks to change their name, the assistant's name, mood, wake word, background run, or display over apps.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {
+                        assistantName: { type: "STRING" as any, description: "The name of the assistant." },
+                        userName: { type: "STRING" as any, description: "The name of the user." },
+                        mood: { type: "STRING" as any, description: "The personality/mood of the assistant. Must be one of: playful, curious, annoyed, excited." },
+                        wakeWordEnabled: { type: "BOOLEAN" as any, description: "Whether the wake word is enabled." },
+                        bgRun: { type: "BOOLEAN" as any, description: "Whether the app should run in the background." },
+                        displayOverApps: { type: "BOOLEAN" as any, description: "Whether the app should display over other apps." }
+                      }
+                    }
+                  },
+                  {
+                    name: "generateMedia",
+                    description: "Generates an image, video, animation, music, or audio clip based on a text prompt.",
+                    parameters: {
+                      type: "OBJECT" as any,
+                      properties: {
+                        type: {
+                          type: "STRING" as any,
+                          description: "The type of media to generate. Must be one of: image, video, music.",
+                        },
+                        prompt: {
+                          type: "STRING" as any,
+                          description: "A detailed description of what to generate.",
+                        },
+                        aspectRatio: {
+                          type: "STRING" as any,
+                          description: "The aspect ratio for images or videos. Use '16:9' for landscape or '9:16' for portrait. Default is '16:9'.",
+                        },
+                        sourceImage: {
+                          type: "STRING" as any,
+                          description: "Optional: A base64 encoded image to use as a starting point for video generation (Image-to-Video).",
+                        }
+                      },
+                      required: ["type", "prompt"],
+                    },
+                  }
+                ],
+              },
+            ],
           },
-          onclose: () => {
-            this.isConnected = false;
-            this.stopHeartbeat();
-            this.callbacks.onClose?.();
-            this.attemptAutoReconnect();
-          },
-          onerror: (error: any) => {
-            this.stopHeartbeat();
-            this.callbacks.onError?.(error);
-            this.attemptAutoReconnect();
-          },
-          onmessage: async (message: any) => {
-            this.lastMessageReceivedAt = Date.now();
-            const serverContent = message.serverContent;
-            
-            // Handle audio output and text from model turn
-            if (serverContent?.modelTurn?.parts) {
-              for (const part of serverContent.modelTurn.parts) {
-                if (part.inlineData?.data) {
-                  this.callbacks.onAudioOutput?.(part.inlineData.data);
-                }
-                if (part.text) {
-                  this.callbacks.onTranscription?.(part.text, true);
+          callbacks: {
+            onopen: () => {
+              this.isConnected = true;
+              this.isReconnecting = false;
+              this.reconnectAttempts = 0;
+              this.startHeartbeat();
+              this.callbacks.onOpen?.();
+            },
+            onclose: () => {
+              this.isConnected = false;
+              this.stopHeartbeat();
+              this.callbacks.onClose?.();
+              this.attemptAutoReconnect();
+            },
+            onerror: (error: any) => {
+              this.stopHeartbeat();
+              this.callbacks.onError?.(error);
+              this.attemptAutoReconnect();
+            },
+            onmessage: async (message: any) => {
+              this.lastMessageReceivedAt = Date.now();
+              const serverContent = message.serverContent;
+              
+              // Handle transcription from Live API - Use a more robust check to prevent duplicates
+              // We prioritize outputTranscription for the live feel, but avoid double-counting with modelTurn text
+              let modelTranscription = "";
+              if (message.outputTranscription) {
+                modelTranscription = message.outputTranscription.text || message.outputTranscription;
+              } else if (serverContent?.outputTranscription) {
+                modelTranscription = serverContent.outputTranscription.text || serverContent.outputTranscription;
+              }
+
+              if (modelTranscription && typeof modelTranscription === 'string') {
+                this.callbacks.onTranscription?.(modelTranscription, true);
+              }
+              
+              // Only use modelTurn text if we didn't get an outputTranscription
+              if (!modelTranscription && serverContent?.modelTurn?.parts) {
+                for (const part of serverContent.modelTurn.parts) {
+                  if (part.text) {
+                    this.callbacks.onTranscription?.(part.text, true);
+                  }
                 }
               }
-            }
 
-            // Handle transcription from Live API (can be in different places depending on SDK version)
-            if (message.outputTranscription) {
-              this.callbacks.onTranscription?.(message.outputTranscription.text || message.outputTranscription, true);
-            }
-            if (serverContent?.outputTranscription) {
-              this.callbacks.onTranscription?.(serverContent.outputTranscription.text || serverContent.outputTranscription, true);
-            }
-            
-            if (message.inputTranscription) {
-              this.callbacks.onTranscription?.(message.inputTranscription.text || message.inputTranscription, false);
-            }
-            if (serverContent?.inputTranscription) {
-              this.callbacks.onTranscription?.(serverContent.inputTranscription.text || serverContent.inputTranscription, false);
-            }
-
-            if (serverContent?.userTurn?.parts) {
-              for (const part of serverContent.userTurn.parts) {
-                if (part.text) {
-                  this.callbacks.onTranscription?.(part.text, false);
+              // Handle audio output
+              if (serverContent?.modelTurn?.parts) {
+                for (const part of serverContent.modelTurn.parts) {
+                  if (part.inlineData?.data) {
+                    this.callbacks.onAudioOutput?.(part.inlineData.data);
+                  }
                 }
               }
-            }
+              
+              let userTranscription = "";
+              if (message.inputTranscription) {
+                userTranscription = message.inputTranscription.text || message.inputTranscription;
+              } else if (serverContent?.inputTranscription) {
+                userTranscription = serverContent.inputTranscription.text || serverContent.inputTranscription;
+              }
 
-            if (serverContent?.interrupted) {
-              this.callbacks.onInterrupted?.();
-            }
-            if (message.toolCall) {
-              this.callbacks.onToolCall?.(message.toolCall);
-            }
+              if (userTranscription && typeof userTranscription === 'string') {
+                this.callbacks.onTranscription?.(userTranscription, false);
+              }
+  
+              if (serverContent?.userTurn?.parts) {
+                for (const part of serverContent.userTurn.parts) {
+                  if (part.text) {
+                    this.callbacks.onTranscription?.(part.text, false);
+                  }
+                }
+              }
+  
+              if (serverContent?.interrupted) {
+                this.callbacks.onInterrupted?.();
+              }
+              if (message.toolCall) {
+                this.callbacks.onToolCall?.(message.toolCall);
+              }
+            },
           },
-        },
-      });
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Gemini Live API connection timed out. Please check your internet or API key.")), 15000))
+      ]);
     } catch (error) {
       this.callbacks.onError?.(error as Error);
+      throw error;
     }
   }
 

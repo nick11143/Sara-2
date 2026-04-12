@@ -31,7 +31,7 @@ async function startServer() {
       client_id: process.env.GOOGLE_CLIENT_ID!,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email",
+      scope: "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.email",
       access_type: "offline",
       prompt: "consent",
     });
@@ -65,15 +65,17 @@ async function startServer() {
         <html>
           <body>
             <script>
+              const tokens = ${JSON.stringify({ access_token, refresh_token })};
               if (window.opener) {
                 window.opener.postMessage({ 
                   type: 'GOOGLE_AUTH_SUCCESS', 
-                  tokens: ${JSON.stringify({ access_token, refresh_token })} 
+                  tokens: tokens 
                 }, '*');
-                window.close();
-              } else {
-                window.location.href = '/';
               }
+              // Fallback for PWA/Extension
+              localStorage.setItem('google_drive_tokens_temp', JSON.stringify(tokens));
+              window.close();
+              setTimeout(() => { window.location.href = '/'; }, 1000);
             </script>
             <p>Authentication successful. This window should close automatically.</p>
           </body>

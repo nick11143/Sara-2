@@ -4,6 +4,7 @@ import { VideoStreamer } from "../lib/video-streamer";
 import { LiveSession } from "../lib/sara-session";
 import { GoogleDriveService, GoogleTokens } from "../lib/google-drive";
 import { GenerationService } from "../lib/generation";
+import { encryptData, decryptData } from "../lib/encryption";
 
 export type SaraState = "disconnected" | "connecting" | "idle" | "listening" | "speaking" | "generating";
 export type ZoyaMood = "playful" | "curious" | "annoyed" | "excited";
@@ -31,7 +32,6 @@ export function useSara() {
   const [customWakeWord, setCustomWakeWord] = useState(() => localStorage.getItem("customWakeWord") || "");
   const [assistantName, setAssistantName] = useState(() => localStorage.getItem("assistantName") || "SARA");
   const [userName, setUserName] = useState(() => localStorage.getItem("userName") || "User");
-  const [storageType, setStorageType] = useState(() => localStorage.getItem("storageType") || "drive");
   const [bgRun, setBgRun] = useState(() => localStorage.getItem("bgRun") === "true");
   const [displayOverApps, setDisplayOverApps] = useState(() => localStorage.getItem("displayOverApps") === "true");
   const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem("customApiKey") || "");
@@ -40,13 +40,12 @@ export function useSara() {
   useEffect(() => {
     localStorage.setItem("assistantName", assistantName);
     localStorage.setItem("userName", userName);
-    localStorage.setItem("storageType", storageType);
     localStorage.setItem("bgRun", String(bgRun));
     localStorage.setItem("displayOverApps", String(displayOverApps));
     localStorage.setItem("customApiKey", customApiKey);
     localStorage.setItem("customWakeWord", customWakeWord);
     localStorage.setItem("wakeWordEnabled", String(wakeWordEnabled));
-  }, [assistantName, userName, storageType, bgRun, displayOverApps, customApiKey, customWakeWord, wakeWordEnabled]);
+  }, [assistantName, userName, bgRun, displayOverApps, customApiKey, customWakeWord, wakeWordEnabled]);
 
   const sessionRef = useRef<LiveSession | null>(null);
   const streamerRef = useRef<AudioStreamer | null>(null);
@@ -151,66 +150,69 @@ export function useSara() {
         loadMemoryFromDrive(tokens);
       }
     };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  // --- LEVEL 10: Quantum-Encrypted Memory Storage ---
-  const encryptMemory = (data: any) => {
-    try {
-      return btoa(encodeURIComponent(JSON.stringify(data)));
-    } catch (e) {
-      console.error("[Encryption Error]", e);
-      return JSON.stringify(data);
-    }
-  };
-
-  const decryptMemory = (data: string) => {
-    try {
-      return JSON.parse(decodeURIComponent(atob(data)));
-    } catch (e) {
-      // Fallback for unencrypted old data
-      try {
-        return JSON.parse(data);
-      } catch (e2) {
-        console.error("[Decryption Error]", e2);
-        return {};
-      }
-    }
-  };
-  // --------------------------------------------------
-
-  // Load tokens from localStorage on mount
-  useEffect(() => {
-    const storageType = localStorage.getItem("storageType") || "drive";
     
-    if (storageType === "local") {
-      const savedMemory = localStorage.getItem('sara_local_memory_v2'); // Use new key for encrypted
-      const oldMemory = localStorage.getItem('sara_local_memory');
-      
-      if (savedMemory) {
-        const parsed = decryptMemory(savedMemory);
-        setMemory(parsed);
-        if (parsed.messages) setMessages(parsed.messages);
-      } else if (oldMemory) {
-        // Migrate old memory
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'google_drive_tokens_temp' && event.newValue) {
         try {
-          const parsed = JSON.parse(oldMemory);
-          setMemory(parsed);
-          if (parsed.messages) setMessages(parsed.messages);
-          localStorage.setItem('sara_local_memory_v2', encryptMemory(parsed));
-        } catch (e) {}
-      }
-    } else {
-      const savedTokens = localStorage.getItem('google_drive_tokens');
-      if (savedTokens) {
-        try {
-          const tokens = JSON.parse(savedTokens);
+          const tokens = JSON.parse(event.newValue);
           setDriveTokens(tokens);
+          localStorage.setItem('google_drive_tokens', JSON.stringify(tokens));
+          localStorage.removeItem('google_drive_tokens_temp');
           loadMemoryFromDrive(tokens);
         } catch (e) {
-          console.error("Failed to parse saved tokens", e);
+          console.error("Failed to parse temp tokens", e);
         }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  // Load tokens and local memory on mount
+  useEffect(() => {
+    // 1. Always load local memory first for quick access
+    const savedMemory = localStorage.getItem('sara_local_memory_v3'); // Use new key for AES encrypted
+    const oldMemoryV2 = localStorage.getItem('sara_local_memory_v2');
+    const oldMemory = localStorage.getItem('sara_local_memory');
+    
+    if (savedMemory) {
+      const parsed = decryptData(savedMemory);
+      if (parsed) {
+        setMemory(parsed);
+        if (parsed.messages) setMessages(parsed.messages);
+      }
+    } else if (oldMemoryV2) {
+      // Migrate from old base64 encryption
+      try {
+        const parsed = JSON.parse(decodeURIComponent(atob(oldMemoryV2)));
+        setMemory(parsed);
+        if (parsed.messages) setMessages(parsed.messages);
+        localStorage.setItem('sara_local_memory_v3', encryptData(parsed));
+      } catch (e) {}
+    } else if (oldMemory) {
+      // Migrate from unencrypted
+      try {
+        const parsed = JSON.parse(oldMemory);
+        setMemory(parsed);
+        if (parsed.messages) setMessages(parsed.messages);
+        localStorage.setItem('sara_local_memory_v3', encryptData(parsed));
+      } catch (e) {}
+    }
+
+    // 2. Then check for Drive tokens and sync if available
+    const savedTokens = localStorage.getItem('google_drive_tokens');
+    if (savedTokens) {
+      try {
+        const tokens = JSON.parse(savedTokens);
+        setDriveTokens(tokens);
+        loadMemoryFromDrive(tokens);
+      } catch (e) {
+        console.error("Failed to parse saved tokens", e);
       }
     }
   }, []);
@@ -223,9 +225,11 @@ export function useSara() {
         if (loadedMemory.messages) {
           setMessages(loadedMemory.messages);
         }
+        // Sync drive data back to local storage
+        localStorage.setItem('sara_local_memory_v3', encryptData(loadedMemory));
       }
     } catch (err: any) {
-      if (err.response?.status === 401) {
+      if (err.response?.status === 401 || err.response?.status === 403) {
         if (tokens.refresh_token) {
           try {
             const newTokens = await GoogleDriveService.refreshToken(tokens.refresh_token);
@@ -238,6 +242,8 @@ export function useSara() {
               if (loadedMemory.messages) {
                 setMessages(loadedMemory.messages);
               }
+              // Sync drive data back to local storage
+              localStorage.setItem('sara_local_memory_v3', encryptData(loadedMemory));
             }
             return;
           } catch (refreshErr) {
@@ -247,16 +253,16 @@ export function useSara() {
         // If no refresh token or refresh failed
         setDriveTokens(null);
         localStorage.removeItem('google_drive_tokens');
-        setError("Google Drive session expired. Please reconnect in Settings.");
+        setError(err.response?.status === 403 
+          ? "Google Drive permissions updated. Please reconnect in Settings." 
+          : "Google Drive session expired. Please reconnect in Settings.");
       } else {
         console.error("Failed to load memory:", err);
       }
     }
   };
 
-  const saveMemoryToDrive = useCallback(async () => {
-    const storageType = localStorage.getItem("storageType") || "drive";
-    
+  const saveMemory = useCallback(async () => {
     try {
       if (messages.length === 0) return;
 
@@ -266,22 +272,22 @@ export function useSara() {
         history: messages.map(m => `${m.role === 'user' ? 'User' : 'SARA'}: ${m.content}`).join("\n")
       };
       
-      if (storageType === "local") {
-        localStorage.setItem('sara_local_memory_v2', encryptMemory(updatedMemory));
-        setMemory(updatedMemory);
-      } else if (driveTokens) {
+      // 1. Always save to local storage (encrypted)
+      localStorage.setItem('sara_local_memory_v3', encryptData(updatedMemory));
+      setMemory(updatedMemory);
+
+      // 2. If Drive is connected, sync to Drive (encrypted)
+      if (driveTokens) {
         try {
           await GoogleDriveService.saveMemory(driveTokens, updatedMemory);
-          setMemory(updatedMemory);
         } catch (err: any) {
-          if (err.response?.status === 401) {
+          if (err.response?.status === 401 || err.response?.status === 403) {
             if (driveTokens.refresh_token) {
               try {
                 const newTokens = await GoogleDriveService.refreshToken(driveTokens.refresh_token);
                 setDriveTokens(newTokens);
                 localStorage.setItem('google_drive_tokens', JSON.stringify(newTokens));
                 await GoogleDriveService.saveMemory(newTokens, updatedMemory);
-                setMemory(updatedMemory);
                 return;
               } catch (refreshErr) {
                 console.error("Failed to refresh token:", refreshErr);
@@ -290,7 +296,9 @@ export function useSara() {
             // If no refresh token or refresh failed
             setDriveTokens(null);
             localStorage.removeItem('google_drive_tokens');
-            setError("Google Drive session expired. Please reconnect in Settings.");
+            setError(err.response?.status === 403 
+              ? "Google Drive permissions updated. Please reconnect in Settings." 
+              : "Google Drive session expired. Please reconnect in Settings.");
           } else {
             throw err;
           }
@@ -522,11 +530,8 @@ export function useSara() {
             customInstructions: [...(prev.customInstructions || []), instruction]
           };
           
-          // Force save to local storage immediately
-          const storageType = localStorage.getItem("storageType") || "drive";
-          if (storageType === "local") {
-            localStorage.setItem('sara_local_memory_v2', encryptMemory(newMemory));
-          }
+          // Force save to local storage immediately (encrypted)
+          localStorage.setItem('sara_local_memory_v3', encryptData(newMemory));
           
           return newMemory;
         });
@@ -544,7 +549,7 @@ export function useSara() {
           id,
         });
       } else if (name === "updateSettings") {
-        const { assistantName: newAssistantName, userName: newUserName, mood: newMood, storageType: newStorageType, wakeWordEnabled: newWakeWordEnabled, bgRun: newBgRun, displayOverApps: newDisplayOverApps } = args;
+        const { assistantName: newAssistantName, userName: newUserName, mood: newMood, wakeWordEnabled: newWakeWordEnabled, bgRun: newBgRun, displayOverApps: newDisplayOverApps } = args;
         
         const updates: string[] = [];
         if (newAssistantName !== undefined) {
@@ -558,10 +563,6 @@ export function useSara() {
         if (newMood !== undefined) {
           setBasePersonality(newMood as ZoyaMood);
           updates.push(`Mood: ${newMood}`);
-        }
-        if (newStorageType !== undefined) {
-          setStorageType(newStorageType);
-          updates.push(`Storage Type: ${newStorageType}`);
         }
         if (newWakeWordEnabled !== undefined) {
           setWakeWordEnabled(newWakeWordEnabled);
@@ -605,7 +606,7 @@ export function useSara() {
     if (functionResponses.length > 0) {
       sessionRef.current?.sendToolResponse({ functionResponses });
     }
-  }, [addMessage, setAssistantName, setUserName, setBasePersonality, setStorageType, setWakeWordEnabled, setBgRun, setDisplayOverApps, generate]);
+  }, [addMessage, setAssistantName, setUserName, setBasePersonality, setWakeWordEnabled, setBgRun, setDisplayOverApps, generate]);
 
   const isManualDisconnectRef = useRef(false);
   const reconnectCountRef = useRef(0);
@@ -621,8 +622,8 @@ export function useSara() {
     setIsScreenSharing(false);
     setState("disconnected");
     isSpeakingRef.current = false;
-    saveMemoryToDrive();
-  }, [saveMemoryToDrive]);
+    saveMemory();
+  }, [saveMemory]);
 
   const connect = useCallback(async () => {
     const apiKey = customApiKey || process.env.GEMINI_API_KEY;
@@ -644,18 +645,17 @@ export function useSara() {
 
     // Connection timeout to prevent getting stuck in "connecting"
     const connectionTimeout = setTimeout(() => {
-      if (sessionRef.current && !sessionRef.current.isConnected) {
-        console.error("SARA Connection Timeout");
-        setError("Connection timed out. Retrying...");
-        // DO NOT call the main disconnect() as it sets manual disconnect to true.
-        // Just force the session to close so the watchdog takes over.
-        try {
-          if (typeof (sessionRef.current as any).session?.close === 'function') {
-            (sessionRef.current as any).session.close();
-          }
-        } catch (e) {}
-      }
-    }, 30000); // Increased timeout to 30s for slower networks
+      // We don't check state === "connecting" here because state is captured in the closure
+      // If this timeout fires, it means onOpen was never called to clear it.
+      console.error("SARA Connection Timeout");
+      setError("Connection timed out. Please check your internet or API key and try again.");
+      setState("disconnected");
+      try {
+        if (typeof (sessionRef.current as any)?.session?.close === 'function') {
+          (sessionRef.current as any).session.close();
+        }
+      } catch (e) {}
+    }, 20000); // Reduced timeout to 20s for better UX
 
     // Reuse streamer if it exists
     if (!streamerRef.current) {
@@ -696,7 +696,7 @@ export function useSara() {
           streamerRef.current?.stop();
           videoStreamerRef.current?.stop();
           setIsScreenSharing(false);
-          saveMemoryToDrive();
+          saveMemory();
         } else {
           setState("connecting"); // Show connecting state during auto-reconnect
         }
@@ -705,15 +705,19 @@ export function useSara() {
         clearTimeout(connectionTimeout);
         console.error("SARA Session Error:", err);
         
-        if (isManualDisconnectRef.current) {
-          setError(`SARA Connection Error: ${err.message}`);
+        const errorMsg = err.message || "Unknown connection error";
+        setError(`Connection Error: ${errorMsg}`);
+        
+        // If it's a fatal error or manual disconnect, go to disconnected
+        if (isManualDisconnectRef.current || errorMsg.includes("API key") || errorMsg.includes("timed out")) {
           setState("disconnected");
           sessionRef.current = null;
           streamerRef.current?.stop();
           videoStreamerRef.current?.stop();
           setIsScreenSharing(false);
         } else {
-          setState("connecting"); // Show connecting state during auto-reconnect
+          // Otherwise try to reconnect
+          setState("connecting");
         }
       },
       onAudioOutput: handleAudioOutput,
@@ -741,7 +745,7 @@ export function useSara() {
       setError(`Failed to initialize session: ${err.message}`);
       setState("disconnected");
     }
-  }, [state, handleAudioOutput, handleToolCall, handleTranscription, memory, saveMemoryToDrive, mood, customApiKey, disconnect]);
+  }, [state, handleAudioOutput, handleToolCall, handleTranscription, memory, saveMemory, mood, customApiKey, disconnect]);
 
   const toggleScreenShare = useCallback(async () => {
     if (isScreenSharing) {
@@ -883,8 +887,6 @@ export function useSara() {
     setAssistantName,
     userName,
     setUserName,
-    storageType,
-    setStorageType,
     bgRun,
     setBgRun,
     displayOverApps,

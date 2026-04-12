@@ -1,4 +1,5 @@
 import axios from "axios";
+import { encryptData, decryptData } from "./encryption";
 
 export interface GoogleTokens {
   access_token: string;
@@ -22,9 +23,9 @@ export class GoogleDriveService {
     const { access_token } = tokens;
 
     try {
-      // 1. Search for the file
+      // 1. Search for the file in appDataFolder
       const searchResponse = await axios.get(
-        `https://www.googleapis.com/drive/v3/files?q=name='${this.FILE_NAME}' and trashed=false`,
+        `https://www.googleapis.com/drive/v3/files?q=name='${this.FILE_NAME}' and trashed=false&spaces=appDataFolder`,
         {
           headers: { Authorization: `Bearer ${access_token}` },
         }
@@ -35,9 +36,10 @@ export class GoogleDriveService {
 
       if (fileId) {
         // 2. Update existing file
+        const encryptedPayload = { encryptedData: encryptData(memory) };
         await axios.patch(
           `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
-          JSON.stringify(memory),
+          JSON.stringify(encryptedPayload),
           {
             headers: {
               Authorization: `Bearer ${access_token}`,
@@ -46,10 +48,11 @@ export class GoogleDriveService {
           }
         );
       } else {
-        // 3. Create new file
+        // 3. Create new file in appDataFolder
         const metadata = {
           name: this.FILE_NAME,
           mimeType: "application/json",
+          parents: ["appDataFolder"],
         };
 
         const createResponse = await axios.post(
@@ -66,9 +69,10 @@ export class GoogleDriveService {
         fileId = createResponse.data.id;
 
         // Upload content
+        const encryptedPayload = { encryptedData: encryptData(memory) };
         await axios.patch(
           `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
-          JSON.stringify(memory),
+          JSON.stringify(encryptedPayload),
           {
             headers: {
               Authorization: `Bearer ${access_token}`,
@@ -90,7 +94,7 @@ export class GoogleDriveService {
 
     try {
       const searchResponse = await axios.get(
-        `https://www.googleapis.com/drive/v3/files?q=name='${this.FILE_NAME}' and trashed=false`,
+        `https://www.googleapis.com/drive/v3/files?q=name='${this.FILE_NAME}' and trashed=false&spaces=appDataFolder`,
         {
           headers: { Authorization: `Bearer ${access_token}` },
         }
@@ -107,7 +111,13 @@ export class GoogleDriveService {
         }
       );
 
-      return contentResponse.data;
+      const data = contentResponse.data;
+      if (data && data.encryptedData) {
+        return decryptData(data.encryptedData);
+      }
+      
+      // Fallback for old unencrypted data
+      return data;
     } catch (error: any) {
       console.error("Error loading from Google Drive:", error.response?.data || error.message);
       return null;

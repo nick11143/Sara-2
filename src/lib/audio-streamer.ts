@@ -25,10 +25,29 @@ export class AudioStreamer {
     }
     
     if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
+      try {
+        await Promise.race([
+          this.audioContext.resume(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("AudioContext resume timed out")), 2000))
+        ]);
+      } catch (e) {
+        console.warn("AudioContext resume failed or timed out:", e);
+      }
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    try {
+      // Add a timeout to getUserMedia to prevent hanging in extension environments
+      this.stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({ audio: true }),
+        new Promise<MediaStream>((_, reject) => 
+          setTimeout(() => reject(new Error("Microphone access timed out. If you are in a Chrome Extension popup, please open SARA in a full tab.")), 5000)
+        )
+      ]);
+    } catch (err: any) {
+      console.error("Microphone access error:", err);
+      throw err;
+    }
+
     this.source = this.audioContext.createMediaStreamSource(this.stream);
 
     // ScriptProcessor is deprecated but widely supported and easier to implement here
@@ -84,7 +103,14 @@ export class AudioStreamer {
 
     try {
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+        try {
+          await Promise.race([
+            this.audioContext.resume(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("AudioContext resume timed out")), 2000))
+          ]);
+        } catch (e) {
+          console.warn("AudioContext resume failed or timed out during playback:", e);
+        }
       }
 
       const binaryString = atob(base64Data);
